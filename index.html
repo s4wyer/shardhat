@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="referrer" content="no-referrer">
+		<meta name="description" content="Inspect and download shared files directly from the Sia storage network, with decryption in your browser.">
+		<title>Shardhat</title>
+		<link rel="stylesheet" href="styles.css">
+		<link rel="modulepreload" href="pkg/sia_storage_wasm.js">
+	</head>
+	<body>
+		<div class="app-layout">
+			<header class="app-header">
+				<div class="brand">
+					<svg class="brand-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="square" stroke-linejoin="miter"/>
+					</svg>
+					<span class="brand-name">Shardhat</span>
+				</div>
+				<button type="button" id="change-link-btn" class="btn-link" style="display: none;">
+					Change link
+				</button>
+			</header>
+
+			<main class="main-content">
+				<div id="download-alert" class="alert-box" role="alert" aria-live="polite" style="display: none;">
+					<div class="alert-header">
+						<svg class="alert-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+							<rect x="3" y="3" width="18" height="18" stroke-linecap="square" stroke-linejoin="miter"/>
+							<line x1="12" y1="8" x2="12" y2="13" stroke-linecap="square"/>
+							<line x1="12" y1="16" x2="12.01" y2="16" stroke-linecap="square"/>
+						</svg>
+						<div id="alert-message" class="alert-message"></div>
+					</div>
+				</div>
+
+				<section id="lookup-card" class="card lookup-card">
+					<div class="lookup-header">
+						<h1 class="card-title">Retrieve shared file</h1>
+						<p class="card-subtitle">Enter a Sia share link with an attached sharing key to load file metadata and download.</p>
+					</div>
+
+					<form id="lookup-form" novalidate>
+						<label for="share-url-input" class="sr-only">Share URL</label>
+						<div class="input-stack">
+							<input type="url"
+							       id="share-url-input"
+							       class="text-input"
+							       placeholder="https://sia.storage/objects/.../shared?sc=...#encryption_key=...&amp;sharing_key=..."
+							       autocomplete="off"
+							       spellcheck="false"
+							       required
+							>
+							<div class="lookup-actions">
+								<button type="submit" id="lookup-btn" class="btn btn-primary">Retrieve file</button>
+								<button type="button" id="cancel-lookup-btn" class="btn btn-secondary" style="display: none;">Cancel</button>
+							</div>
+						</div>
+					</form>
+				</section>
+
+				<section id="file-card" class="card file-card" style="display: none;">
+					<div class="file-hero">
+						<div class="file-info-header">
+							<div class="file-icon" aria-hidden="true">
+								<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75">
+									<path d="M14 2H4v20h16V8L14 2z" stroke-linecap="square" stroke-linejoin="miter"/>
+									<polyline points="14 2 14 8 20 8" stroke-linecap="square" stroke-linejoin="miter"/>
+								</svg>
+							</div>
+
+							<div class="file-text-meta">
+								<div class="filename-container">
+									<label for="file-name-input" class="sr-only">Save filename as</label>
+									<input type="text"
+									       id="file-name-input"
+									       class="filename-input"
+									       spellcheck="false"
+									       title="Click to rename before downloading"
+									>
+								</div>
+								<div class="file-sub-meta">
+									<span id="file-size-display" class="meta-item meta-size">-</span>
+									<span class="separator" aria-hidden="true">/</span>
+									<span id="file-network-summary" class="meta-item">-</span>
+									<span class="separator" aria-hidden="true">/</span>
+									<span id="file-expiry-display" class="meta-item">-</span>
+								</div>
+							</div>
+						</div>
+
+						<div class="download-container">
+							<button id="download-btn" class="btn btn-download" type="button">
+								<svg class="btn-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+									<path d="M21 15v6H3v-6M7 10l5 5 5-5M12 15V3" stroke-linecap="square" stroke-linejoin="miter"/>
+								</svg>
+								<span>Download file</span>
+							</button>
+						</div>
+
+						<div id="progress-container" class="progress-container" style="display: none;">
+							<div class="progress-labels">
+								<span id="progress-status" role="status">Connecting...</span>
+								<span id="progress-percent" class="mono-num">0%</span>
+							</div>
+							<div id="progress-bar" class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="progress-status">
+								<div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+							</div>
+						</div>
+					</div>
+
+					<details class="tech-accordion">
+						<summary class="tech-summary">
+							<span>Technical &amp; cryptographic details</span>
+							<svg class="chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+								<polyline points="6 9 12 15 18 9" stroke-linecap="square" stroke-linejoin="miter"></polyline>
+							</svg>
+						</summary>
+
+						<div class="tech-details-body">
+							<dl class="tech-kv-list">
+								<div class="tech-kv-row">
+									<dt>Object ID</dt>
+									<dd><code id="tech-object-id" class="code-truncate">-</code></dd>
+								</div>
+								<div class="tech-kv-row">
+									<dt>Sharing Key</dt>
+									<dd><code id="tech-sharing-key" class="code-truncate">-</code></dd>
+								</div>
+								<div class="tech-kv-row">
+									<dt>Encryption Key</dt>
+									<dd><code id="tech-encryption-key" class="code-truncate">-</code></dd>
+								</div>
+								<div class="tech-kv-row">
+									<dt>Redundancy</dt>
+									<dd id="tech-redundancy">-</dd>
+								</div>
+								<div class="tech-kv-row">
+									<dt>Validity</dt>
+									<dd id="tech-validity">-</dd>
+								</div>
+							</dl>
+
+							<div class="swarm-section">
+								<div class="swarm-table-header">
+									<span>Host swarm</span>
+									<span class="swarm-badge"><span id="swarm-count">0</span>
+									nodes</span>
+								</div>
+
+								<div class="table-wrapper" tabindex="0" role="region" aria-label="Storage host swarm">
+									<table class="tech-table">
+										<thead>
+											<tr>
+												<th class="col-index" scope="col">#</th>
+												<th class="col-key" scope="col">Host Public Key</th>
+												<th class="col-root" scope="col">Sector Merkle Root</th>
+											</tr>
+										</thead>
+										<tbody id="tech-host-rows"></tbody>
+									</table>
+								</div>
+							</div>
+						</div>
+					</details>
+				</section>
+			</main>
+		</div>
+
+		<script type="module" src="app.js"></script>
+		<noscript><p class="noscript-message">JavaScript is required to decrypt and download shared Sia files in your browser.</p></noscript>
+	</body>
+</html>
